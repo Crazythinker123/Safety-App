@@ -27,13 +27,21 @@ class SafetyScanner(private val context: Context) {
         return !powerManager.isIgnoringBatteryOptimizations(context.packageName)
     }
 
-    fun saveEmergencyContact(number: String) {
+    fun saveEmergencyContact(name: String, number: String) {
         val prefs = context.getSharedPreferences("SentinelPrefs", Context.MODE_PRIVATE)
-        prefs.edit().putString("emergency_number", number).apply()
+        prefs.edit()
+            .putString("emergency_name", name)
+            .putString("emergency_number", number)
+            .apply()
     }
 
-    fun getEmergencyContact(): String? {
+    fun getEmergencyContactNumber(): String? {
         val prefs = context.getSharedPreferences("SentinelPrefs", Context.MODE_PRIVATE)
         return prefs.getString("emergency_number", null)
+    }
+
+    fun getEmergencyContactName(): String? {
+        val prefs = context.getSharedPreferences("SentinelPrefs", Context.MODE_PRIVATE)
+        return prefs.getString("emergency_name", null)
     }
 }

@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentinel OS — Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg:        #000000;
+            --surface:   #1C1C1E;
+            --surface2:  #2C2C2E;
+            --surface3:  #3A3A3C;
+            --border:    rgba(255,255,255,0.07);
+            --text:      #FFFFFF;
+            --secondary: #8E8E93;
+            --tertiary:  #48484A;
+            --blue:      #0A84FF;
+            --green:     #30D158;
+            --red:       #FF453A;
+            --amber:     #FF9F0A;
+            --indigo:    #5E5CE6;
+        }
+
+        html, body {
+            height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            overflow: hidden;
+        }
+
+        /* ── Layout ──────────────────────────────────────────────────────── */
+        .app {
+            display: grid;
+            grid-template-rows: 56px 1fr;
+            height: 100vh;
+        }
+
+        .body {
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            overflow: hidden;
+        }
+
+        /* ── Top Bar ─────────────────────────────────────────────────────── */
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            background: rgba(28,28,30,0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .brand h1 {
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: 5px;
+            color: var(--text);
+        }
+
+        .badge {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 10px;
+            border-radius: 100px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.2px;
+        }
+
+        .badge.live {
+            background: rgba(48,209,88,0.12);
+            border: 1px solid rgba(48,209,88,0.25);
+            color: var(--green);
+        }
+
+        .badge.offline {
+            background: rgba(142,142,147,0.12);
+            border: 1px solid rgba(142,142,147,0.2);
+            color: var(--secondary);
+        }
+
+        .badge-dot {
+            width: 5px; height: 5px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .badge.live .badge-dot { animation: blink 1.4s ease-in-out infinite; }
+
+        .topbar-meta {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 12px;
+            color: var(--secondary);
+        }
+
+        .meta-item { display: flex; align-items: center; gap: 6px; }
+        .meta-item span { color: var(--text); font-weight: 500; }
+
+        /* ── Map ─────────────────────────────────────────────────────────── */
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .leaflet-container { background: #111; }
+
+        /* Custom marker */
+        .s-marker-outer {
+            width: 20px; height: 20px;
+            border-radius: 50%;
+            background: rgba(255,69,58,0.25);
+            display: flex; align-items: center; justify-content: center;
+            animation: markerRing 2s ease-out infinite;
+        }
+        .s-marker-inner {
+            width: 11px; height: 11px;
+            border-radius: 50%;
+            background: var(--red);
+            border: 2px solid #fff;
+            box-shadow: 0 2px 8px rgba(255,69,58,0.6);
+        }
+
+        /* ── Panel ───────────────────────────────────────────────────────── */
+        .panel {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            background: var(--bg);
+            border-left: 1px solid var(--border);
+            overflow-y: auto;
+            padding: 14px;
+            gap: 10px;
+        }
+
+        .panel::-webkit-scrollbar { width: 3px; }
+        .panel::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 2px; }
+
+        /* ── Cards ───────────────────────────────────────────────────────── */
+        .card {
+            background: var(--surface);
+            border-radius: 16px;
+            padding: 14px 16px;
+            border: 1px solid var(--border);
+        }
+
+        .card-title {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            color: var(--tertiary);
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+
+        /* ── Alert Status ────────────────────────────────────────────────── */
+        .alert-status {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .alert-status-left { flex: 1; }
+
+        .alert-label {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            padding: 3px 9px;
+            border-radius: 6px;
+            display: inline-block;
+            margin-bottom: 6px;
+        }
+
+        .alert-label.triggered {
+            background: rgba(255,69,58,0.15);
+            color: var(--red);
+        }
+
+        .alert-label.idle {
+            background: rgba(142,142,147,0.12);
+            color: var(--secondary);
+        }
+
+        .alert-time-big { font-size: 22px; font-weight: 700; }
+        .alert-time-sub { font-size: 11px; color: var(--secondary); margin-top: 3px; }
+
+        .alert-count-badge {
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            background: rgba(255,69,58,0.12);
+            border: 1.5px solid rgba(255,69,58,0.25);
+            display: flex; align-items: center; justify-content: center;
+            flex-direction: column;
+        }
+
+        .alert-count-num  { font-size: 18px; font-weight: 800; color: var(--red); line-height: 1; }
+        .alert-count-text { font-size: 8px; color: var(--secondary); letter-spacing: 0.5px; margin-top: 1px; }
+
+        /* ── Location ────────────────────────────────────────────────────── */
+        .coord-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+        .coord-box {
+            background: var(--surface2);
+            border-radius: 10px;
+            padding: 10px 12px;
+        }
+
+        .coord-box-label { font-size: 9px; color: var(--tertiary); font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+        .coord-box-val   { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+
+        .maps-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 10px;
+            padding: 9px;
+            background: rgba(10,132,255,0.08);
+            border: 1px solid rgba(10,132,255,0.18);
+            border-radius: 10px;
+            color: var(--blue);
+            font-size: 12px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: background 0.15s, transform 0.1s;
+        }
+        .maps-btn:hover  { background: rgba(10,132,255,0.16); }
+        .maps-btn:active { transform: scale(0.98); }
+
+        /* ── Battery ─────────────────────────────────────────────────────── */
+        .battery-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .battery-num { font-size: 36px; font-weight: 800; }
+        .battery-num .unit { font-size: 16px; font-weight: 600; color: var(--secondary); }
+
+        .battery-icon-wrap {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .batt-shell {
+            width: 46px; height: 22px;
+            border: 2px solid var(--surface3);
+            border-radius: 5px;
+            padding: 3px;
+            position: relative;
+        }
+
+        .batt-shell::after {
+            content: '';
+            position: absolute;
+            right: -6px; top: 50%;
+            transform: translateY(-50%);
+            width: 4px; height: 10px;
+            background: var(--surface3);
+            border-radius: 0 3px 3px 0;
+        }
+
+        .batt-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.6s ease, background 0.6s ease;
+        }
+
+        .battery-track {
+            height: 8px;
+            background: var(--surface2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .battery-fill-bar {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.6s ease, background 0.6s ease;
+            position: relative;
+        }
+
+        .battery-fill-bar::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+        }
+
+        /* ── Signal ──────────────────────────────────────────────────────── */
+        .signal-row { display: flex; align-items: center; justify-content: space-between; }
+        .signal-text { font-size: 22px; font-weight: 700; }
+        .signal-sub  { font-size: 11px; color: var(--secondary); margin-top: 2px; }
+
+        .signal-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 4px;
+            height: 28px;
+        }
+
+        .s-bar {
+            width: 7px;
+            border-radius: 2px;
+            background: var(--surface3);
+            transition: background 0.3s ease;
+        }
+
+        /* ── Alert Log ───────────────────────────────────────────────────── */
+        .log-scroll {
+            max-height: 230px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .log-scroll::-webkit-scrollbar { width: 3px; }
+        .log-scroll::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 2px; }
+
+        .log-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 12px;
+            background: var(--surface2);
+            border-radius: 11px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: background 0.15s, border 0.15s;
+        }
+
+        .log-item:hover { background: var(--surface3); }
+
+        .log-item.new-alert {
+            border-color: rgba(255,69,58,0.3);
+            background: rgba(255,69,58,0.08);
+            animation: slideIn 0.35s ease;
+        }
+
+        .log-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--red);
+            margin-top: 4px;
+            flex-shrink: 0;
+        }
+
+        .log-coords { font-size: 12px; font-weight: 600; color: var(--text); }
+        .log-batt   { font-size: 11px; color: var(--secondary); margin-top: 2px; }
+        .log-ts     { font-size: 10px; color: var(--tertiary); margin-top: 2px; }
+
+        .log-empty {
+            text-align: center;
+            padding: 24px 16px;
+            color: var(--tertiary);
+            font-size: 12px;
+            line-height: 2;
+        }
+
+        /* ── Animations ──────────────────────────────────────────────────── */
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.3; }
+        }
+
+        @keyframes markerRing {
+            0%   { box-shadow: 0 0 0 0   rgba(255,69,58,0.5); }
+            70%  { box-shadow: 0 0 0 18px rgba(255,69,58,0); }
+            100% { box-shadow: 0 0 0 0   rgba(255,69,58,0); }
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(10px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
+        /* ── Skeleton ────────────────────────────────────────────────────── */
+        .skel {
+            background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
+            background-size: 200% 100%;
+            border-radius: 6px;
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+            0%   { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* ── Responsive ──────────────────────────────────────────────────── */
+        @media (max-width: 800px) {
+            html, body { overflow: auto; }
+            .app  { grid-template-rows: 56px 320px 1fr; height: auto; }
+            .body { grid-template-columns: 1fr; grid-template-rows: 320px auto; }
+            #map  { height: 320px; }
+            .panel { border-left: none; border-top: 1px solid var(--border); }
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+
+    <!-- ── Top Bar ───────────────────────────────────────────────────────── -->
+    <header class="topbar">
+        <div class="brand">
+            <h1>SENTINEL</h1>
+            <div class="badge live" id="live-badge">
+                <div class="badge-dot"></div>
+                LIVE
+            </div>
+        </div>
+        <div class="topbar-meta">
+            <div class="meta-item">Alerts <span id="meta-count">0</span></div>
+            <div class="meta-item">Last seen <span id="meta-time">—</span></div>
+        </div>
+    </header>
+
+    <div class="body">
+
+        <!-- ── Map ───────────────────────────────────────────────────────── -->
+        <div id="map"></div>
+
+        <!-- ── Panel ─────────────────────────────────────────────────────── -->
+        <aside class="panel">
+
+            <!-- Status -->
+            <div class="card">
+                <div class="card-title">Status</div>
+                <div class="alert-status">
+                    <div class="alert-status-left">
+                        <div class="alert-label idle" id="status-badge">STANDBY</div>
+                        <div class="alert-time-big" id="status-time">—</div>
+                        <div class="alert-time-sub" id="status-relative">No alerts yet</div>
+                    </div>
+                    <div class="alert-count-badge">
+                        <div class="alert-count-num" id="alert-count">0</div>
+                        <div class="alert-count-text">ALERTS</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Location -->
+            <div class="card">
+                <div class="card-title">Location</div>
+                <div class="coord-grid">
+                    <div class="coord-box">
+                        <div class="coord-box-label">Latitude</div>
+                        <div class="coord-box-val" id="lat">—</div>
+                    </div>
+                    <div class="coord-box">
+                        <div class="coord-box-label">Longitude</div>
+                        <div class="coord-box-val" id="lng">—</div>
+                    </div>
+                </div>
+                <a class="maps-btn" id="maps-link" href="#" target="_blank">
+                    📍 Open in Google Maps
+                </a>
+            </div>
+
+            <!-- Battery -->
+            <div class="card">
+                <div class="card-title">Battery</div>
+                <div class="battery-row">
+                    <div class="battery-num">
+                        <span id="battery-num">—</span>
+                        <span class="unit" id="battery-unit"></span>
+                    </div>
+                    <div class="batt-shell">
+                        <div class="batt-fill" id="batt-fill" style="width:0%;"></div>
+                    </div>
+                </div>
+                <div class="battery-track">
+                    <div class="battery-fill-bar" id="battery-bar" style="width:0%;"></div>
+                </div>
+            </div>
+
+            <!-- Signal -->
+            <div class="card">
+                <div class="card-title">Signal Strength</div>
+                <div class="signal-row">
+                    <div>
+                        <div class="signal-text" id="signal-text">—</div>
+                        <div class="signal-sub"  id="signal-sub">No data</div>
+                    </div>
+                    <div class="signal-bars">
+                        <div class="s-bar" id="sb1" style="height:6px;"></div>
+                        <div class="s-bar" id="sb2" style="height:10px;"></div>
+                        <div class="s-bar" id="sb3" style="height:15px;"></div>
+                        <div class="s-bar" id="sb4" style="height:20px;"></div>
+                        <div class="s-bar" id="sb5" style="height:26px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alert Log -->
+            <div class="card" style="flex:1;">
+                <div class="card-title">Alert History</div>
+                <div class="log-scroll" id="log-list">
+                    <div class="log-empty">
+                        No alerts recorded yet.<br>
+                        Hold the trigger button to test.
+                    </div>
+                </div>
+            </div>
+
+        </aside>
+    </div>
+</div>
+
+<!-- ── Scripts ──────────────────────────────────────────────────────────── -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<script>
+// ── Firebase ────────────────────────────────────────────────────────────────
+const firebaseConfig = {
+    apiKey:        "AIzaSyCEU5Km6dSj82lld7sAfa3xxjDbaJnERfs",
+    authDomain:    "safe-click-da706.firebaseapp.com",
+    databaseURL:   "https://safe-click-da706-default-rtdb.firebaseio.com",
+    projectId:     "safe-click-da706",
+    storageBucket: "safe-click-da706.firebasestorage.app"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ── Map ─────────────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: false, attributionControl: false })
+             .setView([20, 78], 4);
+
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+// Dark CartoDB tiles — no API key needed
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd',
+    maxZoom: 19
+}).addTo(map);
+
+const markerIcon = L.divIcon({
+    className: '',
+    html: `<div class="s-marker-outer"><div class="s-marker-inner"></div></div>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+    popupAnchor: [0, -14]
+});
+
+let marker     = null;
+let alertCount = 0;
+let history    = [];
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function fmtTime(ts) {
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function fmtDate(ts) {
+    return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function fmtRelative(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 5)    return 'just now';
+    if (s < 60)   return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s/60)}m ago`;
+    if (s < 86400)return `${Math.floor(s/3600)}h ago`;
+    return fmtDate(ts);
+}
+
+function battColor(pct) {
+    if (pct > 40) return '#30D158';
+    if (pct > 20) return '#FF9F0A';
+    return '#FF453A';
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+
+function renderBattery(battStr) {
+    const pct = parseInt(battStr) || 0;
+    const col = battColor(pct);
+    document.getElementById('battery-num').textContent  = pct || '—';
+    document.getElementById('battery-unit').textContent = pct ? '%' : '';
+    document.getElementById('battery-bar').style.width      = pct + '%';
+    document.getElementById('battery-bar').style.background = col;
+    document.getElementById('batt-fill').style.width        = pct + '%';
+    document.getElementById('batt-fill').style.background   = col;
+}
+
+function renderSignal(level) {
+    const labels = ['No Signal', 'Poor', 'Fair', 'Good', 'Excellent'];
+    const subs   = ['No network', 'Very weak', 'Weak signal', 'Good signal', 'Full strength'];
+    const filled = [0, 1, 2, 3, 5];
+    const colors = ['#FF453A','#FF453A','#FF9F0A','#FF9F0A','#30D158'];
+
+    if (level == null || level < 0) {
+        document.getElementById('signal-text').textContent = '—';
+        document.getElementById('signal-sub').textContent  = 'No data';
+        return;
+    }
+
+    const l = Math.min(Math.max(level, 0), 4);
+    document.getElementById('signal-text').textContent = labels[l];
+    document.getElementById('signal-sub').textContent  = subs[l];
+
+    for (let i = 1; i <= 5; i++) {
+        const bar = document.getElementById(`sb${i}`);
+        const on  = i <= filled[l];
+        bar.style.background = on ? colors[l] : 'var(--surface3)';
+    }
+}
+
+function renderLocation(lat, lng) {
+    document.getElementById('lat').textContent = lat.toFixed(6);
+    document.getElementById('lng').textContent = lng.toFixed(6);
+    const url = `https://www.google.com/maps?q=${lat},${lng}`;
+    document.getElementById('maps-link').href = url;
+
+    if (!marker) {
+        marker = L.marker([lat, lng], { icon: markerIcon })
+                  .addTo(map)
+                  .bindPopup(`
+                    <div style="font-family:Inter,sans-serif;padding:4px;">
+                      <div style="font-weight:700;color:#FF453A;margin-bottom:4px;">⚠ SENTINEL ALERT</div>
+                      <div style="font-size:12px;color:#333;">${lat.toFixed(5)}, ${lng.toFixed(5)}</div>
+                      <a href="${url}" target="_blank" style="font-size:11px;color:#0A84FF;">Open in Maps ↗</a>
+                    </div>
+                  `);
+    } else {
+        marker.setLatLng([lat, lng]);
+    }
+    map.flyTo([lat, lng], 15, { animate: true, duration: 1.4 });
+    marker.openPopup();
+}
+
+function renderStatus(ts, isNew) {
+    const badge = document.getElementById('status-badge');
+    badge.textContent = 'TRIGGERED';
+    badge.className   = 'alert-label triggered';
+    document.getElementById('status-time').textContent     = fmtTime(ts);
+    document.getElementById('status-relative').textContent = fmtDate(ts);
+    document.getElementById('meta-time').textContent       = fmtRelative(ts);
+    document.getElementById('meta-count').textContent      = alertCount;
+    document.getElementById('alert-count').textContent     = alertCount;
+}
+
+function renderLog(highlightKey) {
+    const el = document.getElementById('log-list');
+    if (!history.length) {
+        el.innerHTML = `<div class="log-empty">No alerts recorded yet.<br>Hold the trigger button to test.</div>`;
+        return;
+    }
+    el.innerHTML = history.map(a => `
+        <div class="log-item ${a.key === highlightKey ? 'new-alert' : ''}"
+             onclick="flyTo(${a.latitude},${a.longitude})">
+            <div class="log-dot"></div>
+            <div style="flex:1;min-width:0;">
+                <div class="log-coords">${a.latitude.toFixed(5)}, ${a.longitude.toFixed(5)}</div>
+                <div class="log-batt">🔋 ${a.battery || '—'} &nbsp;·&nbsp; 📶 ${signalLabel(a.signal)}</div>
+                <div class="log-ts">${fmtTime(a.timestamp)} &nbsp;·&nbsp; ${fmtRelative(a.timestamp)}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function signalLabel(l) {
+    if (l == null || l < 0) return '—';
+    return ['None','Poor','Fair','Good','Excellent'][Math.min(l,4)];
+}
+
+function flyTo(lat, lng) {
+    map.flyTo([lat, lng], 15, { duration: 1 });
+    if (marker) marker.openPopup();
+}
+
+// Update relative times every 30s
+setInterval(() => {
+    if (!history.length) return;
+    document.getElementById('meta-time').textContent = fmtRelative(history[0].timestamp);
+    renderLog(null);
+}, 30_000);
+
+// ── Firebase ─────────────────────────────────────────────────────────────────
+
+const ref = db.ref('emergency_alerts');
+
+// Load historical alerts
+ref.orderByChild('timestamp').limitToLast(20).once('value', snap => {
+    const data = snap.val();
+    if (!data) return;
+
+    history = Object.entries(data)
+        .map(([key, v]) => ({ key, ...v }))
+        .sort((a, b) => b.timestamp - a.timestamp);
+
+    alertCount = history.length;
+
+    if (history.length) {
+        const latest = history[0];
+        renderLocation(latest.latitude, latest.longitude);
+        renderBattery(latest.battery);
+        renderSignal(latest.signal);
+        renderStatus(latest.timestamp, false);
+    }
+
+    renderLog(null);
+});
+
+// Real-time listener for new alerts
+ref.orderByChild('timestamp').startAt(Date.now()).on('child_added', snap => {
+    const a   = snap.val();
+    const key = snap.key;
+    if (!a) return;
+
+    alertCount++;
+    history.unshift({ key, ...a });
+    if (history.length > 20) history.pop();
+
+    renderLocation(a.latitude, a.longitude);
+    renderBattery(a.battery);
+    renderSignal(a.signal);
+    renderStatus(a.timestamp, true);
+    renderLog(key);
+
+    // Flash tab title
+    let n = 0;
+    const orig = document.title;
+    const iv = setInterval(() => {
+        document.title = n++ % 2 === 0 ? '⚠ ALERT — SENTINEL' : orig;
+        if (n >= 10) { clearInterval(iv); document.title = orig; }
+    }, 350);
+});
+</script>
+</body>
+</html>
